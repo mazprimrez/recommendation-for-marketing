@@ -8,15 +8,19 @@ product_list = pd.read_csv("dataset/product_list.csv")
 customer_recommendation = pd.read_csv("dataset/per_customer.csv")
 
 customer_recommendation['Recommendation'] = customer_recommendation['Recommendation'].apply(ast.literal_eval)
+customer_recommendation['StockCodeRecommendation'] = customer_recommendation['Recommendation'].apply(lambda x: list(x.keys()))
+customer_recommendation['Likelihood'] = customer_recommendation['Recommendation'].apply(lambda x: list(x.values()))
 
 rfm_users = customer_recommendation.groupby("category")['CustomerID'].nunique()
 
 st.header("Users and Product Targeting for Promotion Dashboard")
 st.write("""
-This dashboard contains information about list of Customer ID to be reached for product promotion.
+This dashboard contains information about product recommendation to a user (Product Recommendation), 
+         list of Customer ID (Customer Targeting) to be reached for product promotion,
+         and list of product with its sales number (Product and users).
 """)
 
-recommendation, product_and_users,  = st.tabs(["Recommendation", "Product and Users"])
+recommendation, customer_targeting, product_and_users  = st.tabs(["Product Recommendation", "Costumer Targeting", "Product and Users"])
 
 with product_and_users:
      col1, col2 = st.columns(2)
@@ -62,7 +66,7 @@ with product_and_users:
           5. Loose them is lowest recency, frequency, and monetary scores.
           """)
 
-with recommendation:
+with customer_targeting:
      st.header("Recommend These Users the Product")
 
      stockcode, rfm_cat, number_users = st.columns(3)
@@ -87,8 +91,7 @@ with recommendation:
           st.write("You want to promote these products")
           st.table(product_list[product_list['StockCode'].isin(selected_product)])
 
-          for code in selected_product:
-               per_customer_custom = per_customer_custom[per_customer_custom['StockCodeRecommendation'].str.contains(code)]
+          per_customer_custom = per_customer_custom[per_customer_custom['StockCodeRecommendation'].apply(lambda x: len(set(x).intersection(set(selected_product)))==len(selected_product))]
 
           per_customer_custom['likelihood (%)'] = per_customer_custom['Recommendation'].apply(lambda x: get_likelihood(x, selected_product))
 
@@ -99,3 +102,32 @@ with recommendation:
      st.write("CustomerID is the ID of each customer, category is RFM categorization, \
               likelihood is the likelihood customers might response to the promotion in descending order (in %)")
      st.table(per_customer_custom[['CustomerID', 'category', 'likelihood (%)']].sort_values('likelihood (%)', ascending=False).head(head))
+
+with recommendation:
+     text_type, num_row, button= st.columns(3)
+     default_customer=14821
+
+     with button:
+          if st.button("Shuffle Customer ID"):
+               selected_customer = customer_recommendation.sample(n=1)
+               default_customer = int(selected_customer["CustomerID"].values[0])
+
+     with text_type:
+          CustomerID = st.number_input("Input CustomerID...", value=default_customer)
+          
+     with num_row:
+               head = st.number_input("Input number of products you need...", value=None, 
+                                   placeholder="Maximum 20 rows")
+               if head:
+                    head = int(head)
+
+     if CustomerID:
+          selected_row = customer_recommendation[customer_recommendation['CustomerID']==CustomerID]
+          category = selected_row["category"].values[0]
+          st.write(f"Product Recommendation for CustomerID {CustomerID} ({category.upper()} - RFM categories)")
+
+          reco = selected_row.explode(["StockCodeRecommendation", "Likelihood"])
+          reco = reco.merge(product_list, left_on="StockCodeRecommendation", right_on="StockCode").sort_values("Likelihood", ascending=False)
+
+               
+          st.table(reco[["StockCodeRecommendation", "Description", "Likelihood"]].head(head))
